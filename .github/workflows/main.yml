@@ -1,35 +1,28 @@
-name: Build Rubberband Android ARMv7
+name: Build Rubberband CLI ARMv7
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout Rubberband
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         repository: breakfastquay/rubberband
         ref: v4.0.0
         submodules: recursive
     
-    - name: Setup NDK
-      uses: nttld/setup-ndk@v1
+    - uses: nttld/setup-ndk@v1
       with:
         ndk-version: r26d
         add-to-path: true
     
-    - name: Install Dependencies
-      run: |
+    - run: |
         sudo apt-get update
         sudo apt-get install -y meson ninja-build pkg-config
     
-    - name: Create Android Cross File
-      run: |
+    - run: |
         cat > android-armv7.txt << 'EOF'
         [binaries]
         c = '$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang'
@@ -48,23 +41,17 @@ jobs:
         EOF
         envsubst < android-armv7.txt > android-armv7-resolved.txt
     
-    - name: Configure with Meson
-      run: |
+    - run: |
         meson setup builddir \
           --cross-file=android-armv7-resolved.txt \
           --buildtype=release \
-          --default-library=static \
           -Dfft=kissfft \
           -Dresampler=builtin \
-          -Dcmdline=disabled
+          -Dcmdline=enabled
     
-    - name: Build
-      run: meson compile -C builddir
+    - run: meson compile -C builddir
     
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v4
       with:
-        name: rubberband-armeabi-v7a
-        path: |
-          builddir/librubberband.a
-          builddir/rubberband/*.h
+        name: rubberband-cli-armeabi-v7a
+        path: builddir/rubberband
