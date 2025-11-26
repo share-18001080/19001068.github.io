@@ -1,34 +1,48 @@
-name: Build Rubberband CLI ARMv7
+name: Build Rubberband CLI Static Android
 
-on: [push, workflow_dispatch]
+on: [workflow_dispatch]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout Rubberband
+      uses: actions/checkout@v4
       with:
         repository: breakfastquay/rubberband
         ref: v4.0.0
-        submodules: recursive
-    
-    - uses: nttld/setup-ndk@v1
+        
+    - name: Setup NDK
+      uses: nttld/setup-ndk@v1
       with:
         ndk-version: r26d
         add-to-path: true
-    
-    - run: |
+
+    - name: Install Build Tools
+      run: |
         sudo apt-get update
         sudo apt-get install -y meson ninja-build pkg-config
-    
-    - run: |
+        
+    # --- QUAN TRỌNG: Thiết lập Meson Wrap để tự tải dependencies ---
+    - name: Setup Meson Wraps (Dependencies)
+      run: |
+        mkdir -p subprojects
+        meson wrap install sndfile
+        meson wrap install ogg
+        meson wrap install vorbis
+        meson wrap install flac
+        # Sửa lỗi nhỏ trong file wrap nếu cần (thường Meson tự xử lý tốt)
+
+    - name: Create Android Cross File
+      run: |
         cat > android-armv7.txt << 'EOF'
         [binaries]
         c = '$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang'
         cpp = '$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang++'
         ar = '$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar'
         strip = '$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip'
+        pkgconfig = '/usr/bin/pkg-config' 
         
         [host_machine]
         system = 'android'
@@ -38,20 +52,37 @@ jobs:
         
         [properties]
         needs_exe_wrapper = true
+        # Quan trọng: Ép build static cho mọi thứ
+        default_library = 'static'
         EOF
         envsubst < android-armv7.txt > android-armv7-resolved.txt
-    
-    - run: |
+
+    - name: Configure with Meson
+      run: |
         meson setup builddir \
           --cross-file=android-armv7-resolved.txt \
           --buildtype=release \
+          --default-library=static \
           -Dfft=kissfft \
           -Dresampler=builtin \
-          -Dcmdline=enabled
-    
-    - run: meson compile -C builddir
-    
-    - uses: actions/upload-artifact@v4
+          -Dcmdline=enabled \
+          -Dpic=true \
+          -Dprefer_static=true \
+          -Dsndfile:programs=false \
+          -Dsndfile:tests=false 
+          
+    - name: Build
+      run: meson compile -C builddir
+
+    - name: Verify Binary (Check Architecture)
+      run: |
+        file builddir/rubberband
+        # Kiểm tra xem có phải là statically linked không
+        # Lưu ý: Trên Android vẫn có thể link dynamic với libc.so của hệ thống, 
+        # nhưng sndfile phải nằm bên trong.
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: rubberband-cli-armeabi-v7a
+        name: rubberband-cli-android-static
         path: builddir/rubberband
